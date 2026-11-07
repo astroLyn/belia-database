@@ -93,3 +93,21 @@ CREATE TABLE paquete_servicios (
     notas TEXT,
     PRIMARY KEY (id_servicio, id_paquete)
 );
+
+CREATE TABLE presentacion (
+    id_presentacion SERIAL PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+CREATE TABLE unidad_medida (
+    id_unidad SERIAL PRIMARY KEY,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+);
+
+ALTER TABLE inventario 
+DROP COLUMN presentacion CASCADE,
+DROP COLUMN unidad CASCADE;
+
+ALTER TABLE inventario 
+ADD COLUMN presentacion_id INT REFERENCES presentacion(id_presentacion),
+ADD COLUMN unidad_id INT REFERENCES unidad_medida(id_unidad);
