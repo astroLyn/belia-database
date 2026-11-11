@@ -255,21 +255,341 @@ SELECT sp_crear_producto_inventario(
     p_imagen_url := 'https://ejemplo.com/aceite_argan.png'
 );
 
---INFO EMPLEADOS--
-CREATE OR REPLACE VIEW vw_directorio_empleados AS
+--EMPLEADOS--
+--Vista para el Directorio de Empleados
+CREATE VIEW vw_directorio_empleados AS
 SELECT 
     e.id_empleado,
     e.nombre_completo AS empleado,
-    e.rol,
-    e.especialidad,
     e.telefono,
     e.correo,
-    -- Extrae la hora de entrada y salida formateada a HH:MM
+    e.especialidad,
     (
-        SELECT TO_CHAR(MIN(h.hora_entrada), 'HH24:MI') || ' - ' || TO_CHAR(MAX(h.hora_salida), 'HH24:MI')
+        SELECT 
+            CASE MIN(h.dia) WHEN 1 THEN 'Lun' WHEN 2 THEN 'Mar' WHEN 3 THEN 'Mié' WHEN 4 THEN 'Jue' WHEN 5 THEN 'Vie' WHEN 6 THEN 'Sáb' WHEN 0 THEN 'Dom' END || ' - ' ||
+            CASE MAX(h.dia) WHEN 1 THEN 'Lun' WHEN 2 THEN 'Mar' WHEN 3 THEN 'Mié' WHEN 4 THEN 'Jue' WHEN 5 THEN 'Vie' WHEN 6 THEN 'Sáb' WHEN 0 THEN 'Dom' END || ' · ' ||
+            TO_CHAR(MIN(h.hora_entrada), 'HH24:MI') || ' - ' || TO_CHAR(MAX(h.hora_salida), 'HH24:MI')
         FROM horarios h
         WHERE h.empleado_id = e.id_empleado
-    ) AS horario_resumen
+    ) AS horario_resumen,
+    es.nombre AS estado
 FROM empleado e
+JOIN estado es ON e.estado_id = es.id_estado
+WHERE es.nombre != 'Cancelada'
 ORDER BY e.nombre_completo ASC;
 SELECT * FROM vw_directorio_empleados;
+
+--Agregar un nuevo empleado
+CREATE OR REPLACE FUNCTION sp_crear_empleado(
+    p_nombre_completo VARCHAR,
+    p_telefono VARCHAR,
+    p_correo VARCHAR,
+    p_especialidad VARCHAR,
+    p_dias_laborales SMALLINT[], 
+    p_hora_entrada TIME,
+    p_hora_salida TIME
+) RETURNS INT 
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_id_empleado INT;
+    v_dia SMALLINT;
+BEGIN
+    IF p_hora_entrada >= p_hora_salida THEN
+        RAISE EXCEPTION 'La hora de entrada debe ser anterior a la hora de salida.';
+    END IF;
+
+    -- Se asigna el estado_id = 1 de forma automática
+    INSERT INTO empleado (nombre_completo, telefono, correo, especialidad, rol, password, estado_id)
+    VALUES (TRIM(p_nombre_completo), TRIM(p_telefono), TRIM(p_correo), p_especialidad, 'Estilista', 'por_definir', 1)
+    RETURNING id_empleado INTO v_id_empleado;
+
+    IF p_dias_laborales IS NOT NULL THEN
+        FOREACH v_dia IN ARRAY p_dias_laborales
+        LOOP
+            INSERT INTO horarios (empleado_id, dia, hora_entrada, hora_salida)
+            VALUES (v_id_empleado, v_dia, p_hora_entrada, p_hora_salida);
+        END LOOP;
+    END IF;
+
+    RETURN v_id_empleado;
+END;
+$$;
+SELECT sp_crear_empleado(
+    p_nombre_completo := 'Valeria Torres',
+    p_telefono := '6641122334',
+    p_correo := 'valeria@belia.com',
+    p_especialidad := 'Estilista senior (Cabello)',
+    p_dias_laborales := ARRAY[1, 2, 3, 4, 5]::SMALLINT[], -- 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie
+    p_hora_entrada := '09:00:00',
+    p_hora_salida := '18:00:00'
+);
+SELECT sp_crear_empleado(
+    p_nombre_completo := 'Camila Rojas',
+    p_telefono := '6649988776',
+    p_correo := 'camila@belia.com',
+    p_especialidad := 'Especialista en mirada',
+    p_dias_laborales := ARRAY[5, 6, 0]::SMALLINT[],
+    p_hora_entrada := '10:00:00',
+    p_hora_salida := '15:00:00'
+); 
+
+--Editar información de un empleado
+CREATE OR REPLACE FUNCTION sp_editar_empleado(
+    p_id_empleado INT,
+    p_nombre_completo VARCHAR,
+    p_telefono VARCHAR,
+    p_correo VARCHAR,
+    p_especialidad VARCHAR,
+    p_estado_id INT,
+    p_dias_laborales SMALLINT[],
+    p_hora_entrada TIME,
+    p_hora_salida TIME
+) RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_dia SMALLINT;
+BEGIN
+    IF p_hora_entrada >= p_hora_salida THEN
+        RAISE EXCEPTION 'La hora de entrada debe ser anterior a la hora de salida.';
+    END IF;
+    UPDATE empleado
+    SET nombre_completo = TRIM(p_nombre_completo),
+        telefono = TRIM(p_telefono),
+        correo = TRIM(p_correo),
+        especialidad = p_especialidad,
+        estado_id = p_estado_id
+    WHERE id_empleado = p_id_empleado;
+    DELETE FROM horarios WHERE empleado_id = p_id_empleado;
+    IF p_dias_laborales IS NOT NULL THEN
+        FOREACH v_dia IN ARRAY p_dias_laborales
+        LOOP
+            INSERT INTO horarios (empleado_id, dia, hora_entrada, hora_salida)
+            VALUES (p_id_empleado, v_dia, p_hora_entrada, p_hora_salida);
+        END LOOP;
+    END IF;
+END;
+$$;
+SELECT sp_editar_empleado(
+    p_id_empleado := 1,
+    p_nombre_completo := 'Mariana Silva',
+    p_telefono := '55 1298 7781',
+    p_correo := 'mariana.silva@belia.com',
+    p_especialidad := 'Colorista experta',
+    p_estado_id := 1,
+    p_dias_laborales := ARRAY[2, 3, 4, 5, 6]::SMALLINT[],
+    p_hora_entrada := '10:00:00',
+    p_hora_salida := '19:00:00'
+);
+
+--"Desactivar un empleado" (cambiar su estado a Pendiente)
+CREATE OR REPLACE FUNCTION sp_desactivar_empleado(p_id_empleado INT) 
+RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE empleado 
+    SET estado_id = 2 
+    WHERE id_empleado = p_id_empleado;
+    DELETE FROM horarios WHERE empleado_id = p_id_empleado;
+END;
+$$;
+
+--"Eliminar a un empleado" (cambiar su estado a Inactivo y quita su vista de la tabla principal)
+CREATE OR REPLACE FUNCTION sp_eliminar_empleado(p_id_empleado INT) 
+RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE empleado 
+    SET estado_id = 5 
+    WHERE id_empleado = p_id_empleado;
+    DELETE FROM horarios WHERE empleado_id = p_id_empleado;
+END;
+$$;
+
+--Historial de servicios realizados por un empleado
+CREATE OR REPLACE VIEW vw_historial_empleado AS
+SELECT 
+    c.id_cita,
+    c.empleado_id,
+    s.nombre AS servicio,
+    cat.nombre AS categoria,
+    es.nombre AS estado_cita,
+    s.precio,
+    CASE 
+        WHEN DATE(c.fecha_hora_inicio) = CURRENT_DATE THEN 'Hoy'
+        ELSE TO_CHAR(c.fecha_hora_inicio, 'DD mon YYYY')
+    END || ', ' || TO_CHAR(c.fecha_hora_inicio, 'HH24:MI') || ' - ' || TO_CHAR(c.fecha_hora_fin, 'HH24:MI') || ' hrs' AS fecha_horario,
+    cl.nombre_completo AS cliente_atendido,
+    cl.telefono AS telefono_cliente,
+    -- Si tuvieras un campo de especificaciones por cita, iría aquí. Por ahora usamos las notas del servicio.
+    s.notas_detalles AS especificacion 
+FROM citas c
+JOIN servicios s ON c.servicio_id = s.id_servicio
+JOIN categorias cat ON s.categoria_id = cat.id_categoria
+JOIN estado es ON c.estado_id = es.id_estado
+JOIN clientes cl ON c.cliente_id = cl.id_cliente
+ORDER BY c.fecha_hora_inicio DESC;
+SELECT * FROM vw_historial_empleado;
+
+--CLIENTES--
+--Vista para el Directorio de Clientes
+CREATE OR REPLACE VIEW vw_directorio_clientes AS
+SELECT 
+    cl.id_cliente,
+    cl.nombre_completo AS cliente,
+    cl.telefono,
+    cl.correo,
+    (
+        SELECT s.nombre 
+        FROM citas c 
+        JOIN servicios s ON c.servicio_id = s.id_servicio 
+        WHERE c.cliente_id = cl.id_cliente 
+          AND c.estado_id NOT IN (SELECT id_estado FROM estado WHERE nombre = 'Cancelada')
+        ORDER BY c.fecha_hora_inicio DESC 
+        LIMIT 1
+    ) AS ultimo_servicio,
+    (
+        SELECT TO_CHAR(c.fecha_hora_inicio, 'DD mon YYYY, HH24:MI')
+        FROM citas c 
+        WHERE c.cliente_id = cl.id_cliente 
+          AND c.estado_id NOT IN (SELECT id_estado FROM estado WHERE nombre = 'Cancelada')
+        ORDER BY c.fecha_hora_inicio DESC 
+        LIMIT 1
+    ) AS ultima_visita,
+    es.nombre AS estado
+FROM clientes cl
+JOIN estado es ON cl.estado_id = es.id_estado
+WHERE es.nombre = 'Activo'
+ORDER BY cl.nombre_completo ASC;
+SELECT * FROM vw_directorio_clientes;
+
+--Proceso para la creación de un nuevo cliente
+CREATE OR REPLACE FUNCTION sp_crear_o_reactivar_cliente(
+    p_nombre_completo VARCHAR,
+    p_telefono VARCHAR,
+    p_correo VARCHAR,
+    p_notas_preferencias TEXT,
+    p_servicio_id INT DEFAULT NULL,
+    p_empleado_id INT DEFAULT NULL,
+    p_fecha_hora_visita TIMESTAMP DEFAULT NULL
+) RETURNS INT 
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_id_cliente INT;
+    v_estado_actual INT;
+BEGIN
+    SELECT id_cliente, estado_id INTO v_id_cliente, v_estado_actual 
+    FROM clientes 
+    WHERE telefono = TRIM(p_telefono);
+
+    IF FOUND THEN
+        UPDATE clientes 
+        SET nombre_completo = TRIM(p_nombre_completo),
+            correo = TRIM(p_correo),
+            notas_preferencias = TRIM(p_notas_preferencias),
+            estado_id = 1
+        WHERE id_cliente = v_id_cliente;
+    ELSE
+        INSERT INTO clientes (nombre_completo, telefono, correo, notas_preferencias, estado_id)
+        VALUES (TRIM(p_nombre_completo), TRIM(p_telefono), TRIM(p_correo), TRIM(p_notas_preferencias), 1)
+        RETURNING id_cliente INTO v_id_cliente;
+    END IF;
+
+    IF p_servicio_id IS NOT NULL AND p_empleado_id IS NOT NULL AND p_fecha_hora_visita IS NOT NULL THEN
+        INSERT INTO citas (empleado_id, servicio_id, cliente_id, fecha_hora_inicio, fecha_hora_fin, estado_id)
+        SELECT p_empleado_id, p_servicio_id, v_id_cliente, p_fecha_hora_visita, 
+               p_fecha_hora_visita + (duracion_estimada || ' minutes')::interval, 1
+        FROM servicios WHERE id_servicio = p_servicio_id;
+    END IF;
+
+    RETURN v_id_cliente;
+END;
+$$;
+SELECT sp_crear_o_reactivar_cliente(
+    p_nombre_completo := 'Sofía Mendoza',
+    p_telefono := '5512346678',
+    p_correo := 'sofia.m@email.com',
+    p_notas_preferencias := 'Prefiere productos libres de sulfatos y secado con temperatura media.'
+);
+SELECT sp_crear_o_reactivar_cliente(
+    p_nombre_completo := 'Camila Ruiz',
+    p_telefono := '5534679012',
+    p_correo := 'camila.r@email.com',
+    p_notas_preferencias := 'Alergia al acrílico, prefiere gelish.',
+    p_servicio_id := 2, -- Asumiendo que 2 es "Manicura Gelish"
+    p_empleado_id := 2, -- Asumiendo que 2 es "Laura Manicurista"
+    p_fecha_hora_visita := '2026-11-15 10:30:00'
+);
+SELECT sp_crear_o_reactivar_cliente(
+    p_nombre_completo := 'Sofía Mendoza',
+    p_telefono := '5512346678', -- Este teléfono es la llave mágica
+    p_correo := 'sofia.nuevo@email.com',
+    p_notas_preferencias := 'Cliente reactivada. Regresó al salón.'
+);
+
+-- Procedimiento para editar cliente
+CREATE OR REPLACE FUNCTION sp_editar_cliente(
+    p_id_cliente INT,
+    p_nombre_completo VARCHAR,
+    p_telefono VARCHAR,
+    p_correo VARCHAR,
+    p_notas_preferencias TEXT
+) RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE clientes 
+    SET nombre_completo = TRIM(p_nombre_completo),
+        telefono = TRIM(p_telefono),
+        correo = TRIM(p_correo),
+        notas_preferencias = TRIM(p_notas_preferencias)
+    WHERE id_cliente = p_id_cliente;
+END;
+$$;
+SELECT sp_editar_cliente(
+    p_id_cliente := 5,
+    p_nombre_completo := 'Sofía Mendoza',
+    p_telefono := '5512346678',
+    p_correo := 'sofia.nuevo@email.com', -- Correo actualizado
+    p_notas_preferencias := 'Prefiere productos libres de sulfatos. Ojo: Sensibilidad en cuero cabelludo.'
+);
+
+--"Eliminar" a un cliente (cambia su estado a Inactivo)
+CREATE OR REPLACE FUNCTION sp_eliminar_cliente(p_id_cliente INT) 
+RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE clientes 
+    SET estado_id = 2 
+    WHERE id_cliente = p_id_cliente;
+END;
+$$;
+SELECT sp_eliminar_cliente(p_id_cliente := 5);
+
+--Vista para el Historial de Servicios de un Cliente
+CREATE OR REPLACE VIEW vw_historial_cliente AS
+SELECT 
+    c.id_cita,
+    c.cliente_id,
+    s.nombre AS servicio,
+    cat.nombre AS categoria,
+    es.nombre AS estado_cita,
+    s.precio,
+    CASE 
+        WHEN DATE(c.fecha_hora_inicio) = CURRENT_DATE THEN 'Hoy'
+        ELSE TO_CHAR(c.fecha_hora_inicio, 'DD mon YYYY')
+    END || ', ' || TO_CHAR(c.fecha_hora_inicio, 'HH24:MI') || ' - ' || TO_CHAR(c.fecha_hora_fin, 'HH24:MI') || ' hrs' AS fecha_horario,
+    e.nombre_completo AS empleado_atendio,
+    s.notas_detalles AS especificacion
+FROM citas c
+JOIN servicios s ON c.servicio_id = s.id_servicio
+JOIN categorias cat ON s.categoria_id = cat.id_categoria
+JOIN estado es ON c.estado_id = es.id_estado
+JOIN empleado e ON c.empleado_id = e.id_empleado
+ORDER BY c.fecha_hora_inicio DESC;
+SELECT * FROM vw_historial_cliente;
