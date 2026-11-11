@@ -1,3 +1,32 @@
+--LOGIN--
+CREATE OR REPLACE FUNCTION sp_iniciar_sesion(
+    p_correo VARCHAR
+) RETURNS TABLE (
+    id_usuario INT,
+    nombre_completo VARCHAR,
+    rol VARCHAR,
+    password_hash VARCHAR,
+    estado VARCHAR
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        e.id_empleado AS id_usuario,
+        e.nombre_completo,
+        e.rol,
+        e.password AS password_hash,
+        es.nombre::VARCHAR AS estado
+    FROM empleado e
+    JOIN estado es ON e.estado_id = es.id_estado
+    WHERE e.correo = TRIM(p_correo)
+      -- Una medida de seguridad vital: solo permitir acceso a personal activo
+      AND es.nombre = 'Activo'; 
+END;
+$$;
+SELECT * FROM sp_iniciar_sesion(p_correo := 'mariana.silva@belia.com');
+
 --DASHBOARDS--
 --Vista para los Indicadores Superiores
 CREATE OR REPLACE VIEW vw_dashboard_kpis AS
@@ -285,6 +314,7 @@ CREATE OR REPLACE FUNCTION sp_crear_empleado(
     p_telefono VARCHAR,
     p_correo VARCHAR,
     p_especialidad VARCHAR,
+    p_rol VARCHAR,
     p_dias_laborales SMALLINT[], 
     p_hora_entrada TIME,
     p_hora_salida TIME
@@ -298,10 +328,16 @@ BEGIN
     IF p_hora_entrada >= p_hora_salida THEN
         RAISE EXCEPTION 'La hora de entrada debe ser anterior a la hora de salida.';
     END IF;
-
-    -- Se asigna el estado_id = 1 de forma automática
     INSERT INTO empleado (nombre_completo, telefono, correo, especialidad, rol, password, estado_id)
-    VALUES (TRIM(p_nombre_completo), TRIM(p_telefono), TRIM(p_correo), p_especialidad, 'Estilista', 'por_definir', 1)
+    VALUES (
+        TRIM(p_nombre_completo), 
+        TRIM(p_telefono), 
+        TRIM(p_correo), 
+        p_especialidad, 
+        TRIM(p_rol),
+        'por_definir', 
+        1
+    )
     RETURNING id_empleado INTO v_id_empleado;
 
     IF p_dias_laborales IS NOT NULL THEN
@@ -320,7 +356,7 @@ SELECT sp_crear_empleado(
     p_telefono := '6641122334',
     p_correo := 'valeria@belia.com',
     p_especialidad := 'Estilista senior (Cabello)',
-    p_dias_laborales := ARRAY[1, 2, 3, 4, 5]::SMALLINT[], -- 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie
+    p_dias_laborales := ARRAY[1, 2, 3, 4, 5]::SMALLINT[],
     p_hora_entrada := '09:00:00',
     p_hora_salida := '18:00:00'
 );
@@ -395,6 +431,7 @@ BEGIN
     DELETE FROM horarios WHERE empleado_id = p_id_empleado;
 END;
 $$;
+SELECT sp_desactivar_empleado(p_id_empleado := 3);
 
 --"Eliminar a un empleado" (cambiar su estado a Inactivo y quita su vista de la tabla principal)
 CREATE OR REPLACE FUNCTION sp_eliminar_empleado(p_id_empleado INT) 
@@ -408,6 +445,41 @@ BEGIN
     DELETE FROM horarios WHERE empleado_id = p_id_empleado;
 END;
 $$;
+
+--Reactivar a un empleado (cambiar su estado a Activo y reestablecer su horario)
+CREATE OR REPLACE FUNCTION sp_reactivar_empleado(
+    p_id_empleado INT,
+    p_dias_laborales SMALLINT[],
+    p_hora_entrada TIME,
+    p_hora_salida TIME
+) RETURNS VOID 
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_dia SMALLINT;
+BEGIN
+    IF p_hora_entrada >= p_hora_salida THEN
+        RAISE EXCEPTION 'La hora de entrada debe ser anterior a la hora de salida.';
+    END IF;
+    UPDATE empleado 
+    SET estado_id = 1 
+    WHERE id_empleado = p_id_empleado;
+    DELETE FROM horarios WHERE empleado_id = p_id_empleado;
+    IF p_dias_laborales IS NOT NULL THEN
+        FOREACH v_dia IN ARRAY p_dias_laborales
+        LOOP
+            INSERT INTO horarios (empleado_id, dia, hora_entrada, hora_salida)
+            VALUES (p_id_empleado, v_dia, p_hora_entrada, p_hora_salida);
+        END LOOP;
+    END IF;
+END;
+$$;
+SELECT sp_reactivar_empleado(
+    p_id_empleado := 3,
+    p_dias_laborales := ARRAY[3, 4, 5, 6, 0]::SMALLINT[], -- 3=Mié, 4=Jue, 5=Vie, 6=Sáb, 0=Dom
+    p_hora_entrada := '10:00:00',
+    p_hora_salida := '17:00:00'
+);
 
 --Historial de servicios realizados por un empleado
 CREATE OR REPLACE VIEW vw_historial_empleado AS
