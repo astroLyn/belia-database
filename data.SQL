@@ -4,14 +4,14 @@ INSERT INTO estado (nombre) VALUES
 ('Activo'), ('Inactivo'), ('Por Completar'), ('Completada'), ('Cancelada');
 
 -- Inserción de clientes
-INSERT INTO clientes (nombre_completo, telefono, correo) VALUES 
-('Camila Fernández López', '6641234567', 'camila.fernandez@email.com'),
-('María González', '6649876543', 'maria.gonzalez@email.com');
+INSERT INTO clientes (nombre_completo, telefono, correo, estado_id) VALUES 
+('Camila Fernández López', '6641234567', 'camila.fernandez@email.com', 1),
+('María González', '6649876543', 'maria.gonzalez@email.com', 1);
 
 -- Inserción de empleados
-INSERT INTO empleado (nombre_completo, telefono, correo, password, especialidad, rol) VALUES 
-('Ana Estilista', '6645551122', 'ana@aura.com', '$2b$12$hashgenerado123', 'Cabello', 'Administrador'),
-('Laura Manicurista', '6645553344', 'laura@aura.com', '$2b$12$hashgenerado456', 'Uñas', 'Empleado');
+INSERT INTO empleado (nombre_completo, telefono, correo, password, especialidad, rol, estado_id) VALUES 
+('Ana Estilista', '6645551122', 'ana@aura.com', '$2b$12$hashgenerado123', 'Cabello', 'Administrador', 1),
+('Laura Manicurista', '6645553344', 'laura@aura.com', '$2b$12$hashgenerado456', 'Uñas', 'Empleado', 1);
 
 -- Inserción de horarios laborales (Ejemplo: Ana trabaja Lunes a Viernes de 9 AM a 5 PM)
 INSERT INTO horarios (empleado_id, dia, hora_entrada, hora_salida) VALUES 
@@ -31,8 +31,8 @@ INSERT INTO servicios (nombre, categoria_id, precio, duracion_estimada, notas_de
 ('Corte de cabello para mujer', 1, 350.00, 45, 'Incluye lavado y secado rápido', 1),
 ('Manicura Gelish', 2, 280.00, 60, 'Color sólido, diseño básico', 1);
 INSERT INTO servicios (nombre, categoria_id, precio, duracion_estimada, notas_detalles, estado_id) VALUES 
-('Corte despunte + brushing', 1, 450.00, 60, 'Lavado, corte y peinado', 4),
-('Coloración completa', 1, 1250.00, 120, 'Diagnóstico, tinte y secado', 4);
+('Corte despunte + brushing', 1, 450.00, 60, 'Lavado, corte y peinado', 1),
+('Coloración completa', 1, 1250.00, 120, 'Diagnóstico, tinte y secado', 1);
 
 INSERT INTO presentacion (nombre) VALUES 
 ('Botella'), ('Tubo'), ('Frasco'), ('Tarro'), ('Caja'), ('Bolsa'), ('Ampolleta'), ('Sobre');
@@ -52,14 +52,14 @@ INSERT INTO inventario (nombre, precio, cantidad_existente, presentacion_id, uni
 INSERT INTO citas (empleado_id, servicio_id, cliente_id, fecha_hora_inicio, fecha_hora_fin, estado_id) VALUES 
 (1, 1, 1, '2026-10-15 10:00:00', '2026-10-15 10:45:00', 3);
 INSERT INTO citas (empleado_id, servicio_id, cliente_id, fecha_hora_inicio, fecha_hora_fin, estado_id) VALUES 
-(1, 1, 2, '2026-10-15 10:00:00', '2026-10-16 10:45:00', 3);
+(2, 1, 2, '2026-10-15 10:00:00', '2026-10-15 10:45:00', 3);
 INSERT INTO citas (empleado_id, servicio_id, cliente_id, fecha_hora_inicio, fecha_hora_fin, estado_id) VALUES 
 -- Cita 1: Hoy a las 10:00 (Confirmada - 1 hora)
 (2, 1, 1, CURRENT_DATE + TIME '10:00:00', CURRENT_DATE + TIME '11:00:00', 1),
 -- Cita 2: Hoy a las 11:30 (Confirmada - 45 min)
 (2, 3, 2, CURRENT_DATE + TIME '11:30:00', CURRENT_DATE + TIME '12:15:00', 1),
 -- Cita 3: Hoy a las 13:00 (Pendiente - 2 horas)
-(2, 2, 3, CURRENT_DATE + TIME '13:00:00', CURRENT_DATE + TIME '15:00:00', 2),
+(2, 2, 2, CURRENT_DATE + TIME '13:00:00', CURRENT_DATE + TIME '15:00:00', 3),
 -- Cita 4: Mañana a las 10:00 (Confirmada - No debe salir en métricas de 'Hoy')
 (2, 1, 1, CURRENT_DATE + INTERVAL '1 day' + TIME '10:00:00', CURRENT_DATE + INTERVAL '1 day' + TIME '11:00:00', 1);
 

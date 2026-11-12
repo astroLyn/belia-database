@@ -76,6 +76,7 @@ CREATE TABLE citas (
     cliente_id INT NOT NULL REFERENCES clientes(id_cliente),
     fecha_hora_inicio TIMESTAMP NOT NULL,
     fecha_hora_fin TIMESTAMP NOT NULL,
+    notas_cita TEXT,
     estado_id INT NOT NULL REFERENCES estado(id_estado),
     CONSTRAINT check_fechas_logicas CHECK (fecha_hora_inicio < fecha_hora_fin)
 );
@@ -96,3 +97,6 @@ CREATE TABLE paquete_servicios (
     notas TEXT,
     PRIMARY KEY (id_servicio, id_paquete)
 );
+
+--CITAS--
+--Proceso almacenado para la creación de una cita
